@@ -266,8 +266,12 @@ router.get('/watchlist', requireAuth, async (req, res, next) => {
       orderBy: { addedAt: 'desc' },
     });
 
-    // Return the movies array
-    const movies = items.map((item) => item.movie);
+    // Return the sanitized movies array (videoStreamUrl omitted from public view)
+    const movies = items.map((item) => {
+      if (!item.movie) return null;
+      const { videoStreamUrl, ...safeMovie } = item.movie;
+      return safeMovie;
+    }).filter(Boolean);
     return res.json(movies);
   } catch (error) {
     next(error);

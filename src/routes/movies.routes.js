@@ -1,12 +1,24 @@
 import { Router } from 'express';
 import prisma from '../prisma.js';
+import requireAuth from '../middleware/auth.js';
 
 const router = Router();
+
+/**
+ * Strips sensitive video stream URL fields from public movie payloads
+ * Ensures .m3u8 URLs cannot be inspected or scraped by unauthenticated users.
+ */
+export const sanitizeMovie = (movie) => {
+  if (!movie) return null;
+  const { videoStreamUrl, ...safeMovie } = movie;
+  return safeMovie;
+};
 
 // ==============================================================================
 // 1. GET /api/movies/hero
 // Must be registered BEFORE /:id so 'hero' is not captured as an id parameter.
 // Returns only the movies where isHeroFeatured is true (limit 4).
+// Public metadata only (videoStreamUrl omitted).
 // ==============================================================================
 router.get('/hero', async (req, res, next) => {
   try {
@@ -20,7 +32,7 @@ router.get('/hero', async (req, res, next) => {
       },
     });
 
-    return res.json(heroMovies);
+    return res.json(heroMovies.map(sanitizeMovie));
   } catch (error) {
     next(error);
   }
@@ -93,15 +105,75 @@ router.get('/', async (req, res, next) => {
       },
     });
 
-    return res.json(movies);
+    return res.json(movies.map(sanitizeMovie));
   } catch (error) {
     next(error);
   }
 });
 
 // ==============================================================================
-// 3. GET /api/movies/:id
+// 3. GET /api/movies/:id/stream
+// Protected playback endpoint: requires valid JWT Bearer token via requireAuth.
+// Returns the protected videoStreamUrl (.m3u8) for authenticated playback only.
+// Returns 401 if unauthenticated, 404 if movie not found.
+// Must be registered BEFORE /:id so Express resolves /stream correctly.
+// ==============================================================================
+router.get('/:id/stream', requireAuth, async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!id || typeof id !== 'string' || !id.trim()) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Invalid movie ID or slug.',
+      });
+    }
+
+    const cleanId = id.trim();
+
+    // 1. Match by custom ID (e.g. MOV001)
+    let movie = await prisma.movie.findUnique({
+      where: { id: cleanId },
+      select: {
+        id: true,
+        title: true,
+        videoStreamUrl: true,
+      },
+    });
+
+    // 2. Fallback: match by slug
+    if (!movie) {
+      movie = await prisma.movie.findUnique({
+        where: { slug: cleanId },
+        select: {
+          id: true,
+          title: true,
+          videoStreamUrl: true,
+        },
+      });
+    }
+
+    if (!movie) {
+      return res.status(404).json({
+        error: 'NotFound',
+        message: `Movie with id or slug '${id}' was not found.`,
+      });
+    }
+
+    return res.json({
+      movieId: movie.id,
+      title: movie.title,
+      streamUrl: movie.videoStreamUrl,
+      videoStreamUrl: movie.videoStreamUrl,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ==============================================================================
+// 4. GET /api/movies/:id
 // Returns complete details for a single movie by custom id (e.g. MOV001) or slug.
+// Public metadata only (videoStreamUrl omitted).
 // Returns 404 if not found.
 // ==============================================================================
 router.get('/:id', async (req, res, next) => {
@@ -135,7 +207,7 @@ router.get('/:id', async (req, res, next) => {
       });
     }
 
-    return res.json(movie);
+    return res.json(sanitizeMovie(movie));
   } catch (error) {
     next(error);
   }
