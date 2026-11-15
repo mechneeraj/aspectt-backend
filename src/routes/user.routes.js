@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import prisma from '../prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { generateCustomId } from '../utils/idGenerator.js';
+import { generateOtp, storeOtp, verifyOtp, sendOtpEmail } from '../utils/emailService.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'aspectt_dev_jwt_secret_change_in_production';
@@ -14,8 +15,72 @@ const generateToken = (userId) => {
 };
 
 // ==============================================================================
-// 1. Auth Endpoints: POST /api/user/login and POST /api/user/register
+// 1. Auth Endpoints: POST /api/user/login, /register, /send-otp, /verify-otp
 // ==============================================================================
+router.post('/send-otp', async (req, res, next) => {
+  try {
+    const { email, name } = req.body || {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!email || typeof email !== 'string' || !emailRegex.test(email.trim())) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'A valid email address is required to receive verification code.',
+      });
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = name && typeof name === 'string' ? name.trim() : 'Aspectt User';
+    const otp = generateOtp(6);
+    storeOtp(cleanEmail, otp);
+
+    const emailResult = await sendOtpEmail({
+      toEmail: cleanEmail,
+      toName: cleanName,
+      otp,
+    });
+
+    return res.json({
+      success: true,
+      message: 'Verification code sent successfully. Please check your inbox.',
+      expiresIn: '10 minutes',
+      ...(emailResult?.simulated ? { devOtp: otp } : {}),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/verify-otp', async (req, res, next) => {
+  try {
+    const { email, otp } = req.body || {};
+    if (!email || !otp) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Email and 6-digit OTP code are required.',
+      });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanOtp = String(otp).trim();
+    const result = verifyOtp(cleanEmail, cleanOtp);
+
+    if (!result.valid) {
+      return res.status(400).json({
+        error: 'InvalidOtp',
+        message: result.reason || 'Invalid or expired OTP code.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Email verified successfully.',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post('/login', async (req, res, next) => {
   try {
     const { email, password } = req.body || {};
@@ -68,12 +133,23 @@ router.post('/login', async (req, res, next) => {
 
 router.post('/register', async (req, res, next) => {
   try {
-    const { name, email, password, avatarUrl } = req.body || {};
+    const { name, email, password, avatarUrl, otp } = req.body || {};
     if (!name || !email || !password) {
       return res.status(400).json({
         error: 'ValidationError',
         message: 'Name, email, and password are required.',
       });
+    }
+
+    // Verify OTP if provided
+    if (otp) {
+      const otpCheck = verifyOtp(email.trim().toLowerCase(), String(otp).trim());
+      if (!otpCheck.valid) {
+        return res.status(400).json({
+          error: 'InvalidOtp',
+          message: otpCheck.reason || 'Invalid or expired verification code.',
+        });
+      }
     }
 
     const existing = await prisma.user.findUnique({
