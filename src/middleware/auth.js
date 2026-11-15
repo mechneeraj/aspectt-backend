@@ -28,6 +28,8 @@ export const requireAuth = async (req, res, next) => {
         id: true,
         name: true,
         email: true,
+        phone: true,
+        avatar: true,
         avatarUrl: true,
         appLanguage: true,
         subscriptionTier: true,

@@ -20,6 +20,8 @@ model User {
   name             String
   email            String      @unique
   passwordHash     String
+  phone            String?
+  avatar           String?
   avatarUrl        String      @default("https://api.dicebear.com/10.x/micah/svg?seed=Alex&backgroundColor=7E57C2")
   appLanguage      String      @default("en")
   subscriptionTier String      @default("free")
@@ -116,4 +118,21 @@ model FilmSubmission {
 
   @@map("film_submissions")
 }
+
+// ------------------------------------------------------------------------------
+// 6. Pending Signup Model (Temporary OTP verification before user creation)
+// ------------------------------------------------------------------------------
+model PendingSignup {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  name         String
+  phone        String?
+  passwordHash String
+  otp          String
+  expiresAt    DateTime
+  createdAt    DateTime @default(now())
+
+  @@map("pending_signups")
+}
+
 
