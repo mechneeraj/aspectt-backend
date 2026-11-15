@@ -506,22 +506,29 @@ async function main() {
   for (let i = 0; i < movies.length; i++) {
     const movieData = movies[i];
     const customId = `MOV${String(i + 1).padStart(3, '0')}`;
+    const isCurated = movieData.isCurated !== undefined ? movieData.isCurated : (movieData.isHeroFeatured || i < 6);
 
     const movie = await prisma.movie.upsert({
       where: { slug: movieData.slug },
-      update: { ...movieData },
+      update: {
+        ...movieData,
+        isCurated,
+      },
       create: {
         id: customId,
         ...movieData,
+        isCurated,
       },
     });
     seededMovies.push(movie);
     const heroFlag = movie.isHeroFeatured ? ' ★ [HERO FEATURED]' : '';
-    console.log(`   ✔ [${movie.id}] [${movie.releaseYear}] ${movie.title} (${movie.director})${heroFlag}`);
+    const curatedFlag = movie.isCurated ? ' [CURATED]' : '';
+    console.log(`   ✔ [${movie.id}] [${movie.releaseYear}] ${movie.title} (${movie.director})${heroFlag}${curatedFlag}`);
   }
 
   const heroCount = seededMovies.filter((m) => m.isHeroFeatured).length;
-  console.log(`\n   Total movies seeded: ${seededMovies.length} (${heroCount} hero featured)\n`);
+  const curatedCount = seededMovies.filter((m) => m.isCurated).length;
+  console.log(`\n   Total movies seeded: ${seededMovies.length} (${curatedCount} curated, ${heroCount} hero featured)\n`);
 
   // ----------------------------------------------------------------------------
   // C. Seed Behind The Lens Clips
