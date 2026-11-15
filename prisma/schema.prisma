@@ -1,0 +1,118 @@
+// ==============================================================================
+// Aspectt OTT Platform - Prisma Database Schema
+// Database: PostgreSQL
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------------------------------------------------------------------
+// 1. User Model
+// ------------------------------------------------------------------------------
+model User {
+  id               String      @id
+  name             String
+  email            String      @unique
+  passwordHash     String
+  avatarUrl        String      @default("https://api.dicebear.com/10.x/micah/svg?seed=Alex&backgroundColor=7E57C2")
+  appLanguage      String      @default("en")
+  subscriptionTier String      @default("free")
+  createdAt        DateTime    @default(now())
+
+  // Relations
+  watchlist        Watchlist[]
+
+  @@map("users")
+}
+
+// ------------------------------------------------------------------------------
+// 2. Movie Model
+// ------------------------------------------------------------------------------
+model Movie {
+  id             String      @id
+  title          String
+  slug           String      @unique
+  releaseYear    Int
+  duration       String
+  director       String
+  description    String      @db.Text
+  genres         String[]
+  awardTag       String?
+  directorsNote  String      @db.Text
+  curatorsTake   String      @db.Text
+  posterUrl      String      // 2:3 vertical aspect-poster image
+  backdropUrl    String      // 16:9 horizontal landscape aspect-video backdrop
+  videoStreamUrl String
+  isHeroFeatured Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  // Relations
+  watchlist      Watchlist[]
+
+  @@map("movies")
+}
+
+// ------------------------------------------------------------------------------
+// 3. Watchlist Model (Composite Primary Key: userId + movieId)
+// ------------------------------------------------------------------------------
+model Watchlist {
+  userId  String
+  movieId String
+  addedAt DateTime @default(now())
+
+  // Relations
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  movie   Movie    @relation(fields: [movieId], references: [id], onDelete: Cascade)
+
+  @@id([userId, movieId])
+  @@map("watchlists")
+}
+
+// ------------------------------------------------------------------------------
+// 4. Behind The Lens Model
+// ------------------------------------------------------------------------------
+model BehindTheLens {
+  id            String   @id
+  title         String
+  filmmakerName String
+  cameraNote    String   @db.Text
+  duration      String
+  thumbnailUrl  String
+  clipUrl       String
+  createdAt     DateTime @default(now())
+
+  @@map("behind_the_lens")
+}
+
+// ------------------------------------------------------------------------------
+// 5. Film Submission Model & Status Enum
+// ------------------------------------------------------------------------------
+enum SubmissionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model FilmSubmission {
+  id           String           @id
+  filmTitle    String
+  directorName String
+  email        String
+  screenerLink String
+  synopsis     String           @db.Text
+  status       SubmissionStatus @default(PENDING)
+  reason       String?          @db.Text
+  reviewReason String?          @db.Text
+  submittedAt  DateTime         @default(now())
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  @@map("film_submissions")
+}
+
