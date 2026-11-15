@@ -32,11 +32,17 @@ router.get('/hero', async (req, res, next) => {
 // - search: case-insensitive partial match on title or director
 // - genre: filters movies whose genres array contains the requested genre
 // - year: filters by releaseYear
+// - curated: when req.query.curated === 'true', filters movies by isCurated: true
 // ==============================================================================
 router.get('/', async (req, res, next) => {
   try {
-    const { search, genre, year } = req.query;
+    const { search, genre, year, curated } = req.query;
     const where = {};
+
+    // Filter: curated (when req.query.curated === 'true', filters by isCurated: true)
+    if (curated === 'true') {
+      where.isCurated = true;
+    }
 
     // Filter: search (case-insensitive partial match on title or director)
     if (search && typeof search === 'string' && search.trim() !== '') {

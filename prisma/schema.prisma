@@ -50,6 +50,7 @@ model Movie {
   backdropUrl    String      // 16:9 horizontal landscape aspect-video backdrop
   videoStreamUrl String
   isHeroFeatured Boolean     @default(false)
+  isCurated      Boolean     @default(false)
   createdAt      DateTime    @default(now())
 
   // Relations
