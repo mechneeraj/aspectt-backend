@@ -5,6 +5,7 @@ import prisma from '../prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { generateCustomId } from '../utils/idGenerator.js';
 import { generateOtp, storeOtp, verifyOtp, sendOtpEmail } from '../utils/emailService.js';
+import { memorySubscriptions, checkUserSubscriptionActive } from './subscription.routes.js';
 
 const router = Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'aspectt_dev_jwt_secret_change_in_production';
@@ -26,7 +27,7 @@ const formatUserSafe = (user) => ({
   avatar: user.avatar || null,
   avatarUrl: user.avatarUrl || null,
   appLanguage: user.appLanguage || 'en',
-  subscriptionTier: user.subscriptionTier || 'free',
+  subscriptionTier: user.subscriptionTier || 'FREE',
   createdAt: user.createdAt,
 });
 
@@ -240,9 +241,37 @@ router.post('/verify-otp', async (req, res, next) => {
           avatar: avatarVal,
           avatarUrl: defaultAvatarUrl,
           appLanguage: 'en',
-          subscriptionTier: 'free',
+          subscriptionTier: 'FREE',
         },
       });
+
+      // 5b. Automatically create initial NOT_ACTIVE record in Subscription table
+      try {
+        await prisma.subscription.create({
+          data: {
+            userId: newUser.id,
+            planName: 'NONE',
+            amount: 0,
+            currency: 'INR',
+            status: 'NOT_ACTIVE',
+            startDate: null,
+            expiryDate: null,
+          },
+        });
+      } catch (subErr) {
+        console.warn('Subscription initial row DB note (persisting in memory):', subErr.message);
+        memorySubscriptions.set(newUser.id, {
+          id: `sub_${Date.now()}`,
+          userId: newUser.id,
+          planName: 'NONE',
+          amount: 0,
+          currency: 'INR',
+          status: 'NOT_ACTIVE',
+          startDate: null,
+          expiryDate: null,
+          updatedAt: new Date(),
+        });
+      }
 
       // 6. Clean up pending record
       try {
@@ -250,7 +279,7 @@ router.post('/verify-otp', async (req, res, next) => {
       } catch { }
       pendingSignupsStore.delete(cleanEmail);
 
-      // 7. Generate JWT token and return session
+      // 7. Generate JWT token and return session (with isSubscribed: false)
       const token = generateToken(newUser.id);
       const userSafe = formatUserSafe(newUser);
 
@@ -259,6 +288,7 @@ router.post('/verify-otp', async (req, res, next) => {
         message: 'Account verified and created successfully.',
         token,
         user: userSafe,
+        isSubscribed: false,
       });
     } catch (error) {
       next(error);
@@ -282,6 +312,9 @@ router.post('/login', async (req, res, next) => {
     const cleanEmail = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({
       where: { email: cleanEmail },
+      include: {
+        subscription: true,
+      },
     });
 
     if (!user) {
@@ -299,6 +332,56 @@ router.post('/login', async (req, res, next) => {
       });
     }
 
+    // Verify active subscription strictly against Subscription table
+    const now = new Date();
+    const hasActiveSub = Boolean(
+      user.subscription &&
+      user.subscription.status === 'ACTIVE' &&
+      user.subscription.expiryDate &&
+      new Date(user.subscription.expiryDate) > now
+    );
+
+    // If user has no Subscription record at all, automatically create NOT_ACTIVE record
+    if (!user.subscription) {
+      try {
+        await prisma.subscription.create({
+          data: {
+            userId: user.id,
+            planName: 'NONE',
+            amount: 0,
+            currency: 'INR',
+            status: 'NOT_ACTIVE',
+            startDate: null,
+            expiryDate: null,
+          },
+        });
+      } catch (subErr) {
+        memorySubscriptions.set(user.id, {
+          id: `sub_${Date.now()}`,
+          userId: user.id,
+          planName: 'NONE',
+          amount: 0,
+          currency: 'INR',
+          status: 'NOT_ACTIVE',
+          startDate: null,
+          expiryDate: null,
+          updatedAt: new Date(),
+        });
+      }
+    }
+
+    // Strictly sync subscriptionTier: "PRO" only if active subscription exists, else "FREE"
+    const targetTier = hasActiveSub ? 'PRO' : 'FREE';
+    if (user.subscriptionTier !== targetTier) {
+      try {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { subscriptionTier: targetTier },
+        });
+      } catch { }
+      user.subscriptionTier = targetTier;
+    }
+
     const token = generateToken(user.id);
     const userSafe = formatUserSafe(user);
 
@@ -306,6 +389,7 @@ router.post('/login', async (req, res, next) => {
       message: 'Login successful',
       token,
       user: userSafe,
+      isSubscribed: hasActiveSub,
     });
   } catch (error) {
     next(error);
@@ -370,7 +454,12 @@ router.post('/login', async (req, res, next) => {
       // 5. Profile Endpoints: GET & PATCH /api/user/profile
       // ==============================================================================
       router.get('/profile', requireAuth, async (req, res) => {
-        return res.json(formatUserSafe(req.user));
+        const isSubActive = await checkUserSubscriptionActive(req.user.id);
+        const safeUser = formatUserSafe(req.user);
+        if (!isSubActive && safeUser.subscriptionTier !== 'FREE' && safeUser.subscriptionTier !== 'free') {
+          safeUser.subscriptionTier = 'FREE';
+        }
+        return res.json(safeUser);
       });
 
       router.patch('/profile', requireAuth, async (req, res, next) => {
@@ -394,7 +483,9 @@ router.post('/login', async (req, res, next) => {
             data.appLanguage = appLanguage.trim();
           }
           if (subscriptionTier && typeof subscriptionTier === 'string') {
-            data.subscriptionTier = subscriptionTier.trim();
+            // Strictly guard tier: only set PRO if user has verified active subscription
+            const isSubActive = await checkUserSubscriptionActive(req.user.id);
+            data.subscriptionTier = isSubActive ? 'PRO' : 'FREE';
           }
 
           const updatedUser = await prisma.user.update({

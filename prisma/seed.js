@@ -1,5 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { seedSubscriptions } from './seed-subscriptions.js';
 
 const prisma = new PrismaClient();
 
@@ -628,6 +629,11 @@ async function main() {
       console.log(`   ✔ [${sub.id}] Created submission: "${sub.filmTitle}" (${sub.status})`);
     }
   }
+
+  // ----------------------------------------------------------------------------
+  // F. Seed Demo Subscriptions & Subscription History
+  // ----------------------------------------------------------------------------
+  await seedSubscriptions();
 
   console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   console.log('✅ Aspectt OTT Platform Seeding Completed Successfully!');

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import prisma from '../prisma.js';
 import requireAuth from '../middleware/auth.js';
+import { checkUserSubscriptionActive } from './subscription.routes.js';
 
 const router = Router();
 
@@ -156,6 +157,16 @@ router.get('/:id/stream', requireAuth, async (req, res, next) => {
       return res.status(404).json({
         error: 'NotFound',
         message: `Movie with id or slug '${id}' was not found.`,
+      });
+    }
+
+    // 3. Enforce active subscription check before issuing protected stream URL
+    const isSubActive = await checkUserSubscriptionActive(req.user.id);
+    if (!isSubActive) {
+      return res.status(403).json({
+        error: 'SubscriptionRequired',
+        code: 'SUBSCRIPTION_REQUIRED',
+        message: 'An active subscription is required to stream full movies. Please subscribe to continue.',
       });
     }
 

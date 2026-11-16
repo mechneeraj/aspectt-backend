@@ -7,6 +7,8 @@ import moviesRouter from './routes/movies.routes.js';
 import behindTheLensRouter from './routes/behindTheLens.routes.js';
 import submissionsRouter from './routes/submissions.routes.js';
 import userRouter from './routes/user.routes.js';
+import subscriptionRouter from './routes/subscription.routes.js';
+import { syncAllUserSubscriptions } from '../prisma/sync-subscriptions.js';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -72,6 +74,7 @@ app.use('/api/behind-the-lens', behindTheLensRouter);
 app.use('/api/submissions', submissionsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/auth', userRouter);
+app.use('/api/subscription', subscriptionRouter);
 
 // 404 handler for unrecognized routes
 app.use((req, res) => {
@@ -98,6 +101,11 @@ const server = app.listen(PORT, () => {
   console.log(`🩺 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`====================================================`);
+
+  // Auto-sync all user subscriptions against Subscription table on server boot
+  syncAllUserSubscriptions().catch((err) => {
+    console.warn('Subscription sync note on startup:', err.message);
+  });
 });
 
 export default app;

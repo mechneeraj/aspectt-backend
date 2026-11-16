@@ -24,11 +24,13 @@ model User {
   avatar           String?
   avatarUrl        String      @default("https://api.dicebear.com/10.x/micah/svg?seed=Alex&backgroundColor=7E57C2")
   appLanguage      String      @default("en")
-  subscriptionTier String      @default("free")
+  subscriptionTier String      @default("FREE")
   createdAt        DateTime    @default(now())
 
   // Relations
-  watchlist        Watchlist[]
+  watchlist           Watchlist[]
+  subscription        Subscription?
+  subscriptionHistory SubscriptionHistory[]
 
   @@map("users")
 }
@@ -133,6 +135,46 @@ model PendingSignup {
   createdAt    DateTime @default(now())
 
   @@map("pending_signups")
+}
+
+// ------------------------------------------------------------------------------
+// 7. Subscription Model (Current Active Subscription State per User)
+// ------------------------------------------------------------------------------
+model Subscription {
+  id         String    @id @default(uuid())
+  userId     String    @unique
+  planName   String    @default("NONE") // "NONE" | "MONTHLY" | "YEARLY"
+  amount     Int       @default(0) // 0, 99 or 999
+  currency   String    @default("INR")
+  status     String    @default("NOT_ACTIVE") // "ACTIVE" | "NOT_ACTIVE" | "EXPIRED"
+  startDate  DateTime?
+  expiryDate DateTime?
+  updatedAt  DateTime  @updatedAt
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+// ------------------------------------------------------------------------------
+// 8. Subscription History Model (Complete Audit Trail of All Past & Current Subscriptions)
+// ------------------------------------------------------------------------------
+model SubscriptionHistory {
+  id               String   @id @default(uuid())
+  userId           String
+  planName         String   // "MONTHLY" | "YEARLY"
+  amount           Int      // 99 or 999
+  status           String   // "ACTIVE" | "EXPIRED"
+  paymentReference String?  // e.g. "DUMMY_TXN_..." or gateway transaction id
+  startDate        DateTime
+  expiryDate       DateTime
+  createdAt        DateTime @default(now())
+
+  // Relations
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("subscription_history")
 }
 
 
