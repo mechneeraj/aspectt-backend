@@ -18,6 +18,9 @@ const generateToken = (userId) => {
 // In-memory fallback cache for pending signups (if DB table is unavailable)
 const pendingSignupsStore = new Map();
 
+// In-memory store for active password reset requests
+const passwordResetStore = new Map();
+
 // Helper to format safe public user object
 const formatUserSafe = (user) => ({
   id: user.id,
@@ -187,7 +190,6 @@ const formatUserSafe = (user) => ({
           success: true,
           message: `Verification code sent to ${cleanEmail}. Please enter the 6-digit code.`,
           expiresIn: '10 minutes',
-          ...(emailResult?.simulated ? { devOtp: otp } : {}),
         });
       } catch (error) {
         next(error);
@@ -462,6 +464,269 @@ router.post('/login', async (req, res, next) => {
       token,
       user: userSafe,
       isSubscribed: hasActiveSub,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ==============================================================================
+// 3b. Forgot Password - Step 1: POST /api/auth/forgot-password
+// Validates email or phone, generates 6-digit expiring OTP, dispatches via Brevo
+// ==============================================================================
+router.post('/forgot-password', async (req, res, next) => {
+  try {
+    const { identifier, email } = req.body || {};
+    const rawInput = (identifier || email || '').trim();
+
+    if (!rawInput) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Please provide your registered email address or mobile number.',
+      });
+    }
+
+    const isEmail = rawInput.includes('@');
+    const cleanDigits = rawInput.replace(/\D/g, '');
+
+    let user = null;
+    if (isEmail) {
+      user = await prisma.user.findUnique({
+        where: { email: rawInput.toLowerCase() },
+      });
+    } else if (cleanDigits.length >= 10) {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { phone: rawInput },
+            { phone: cleanDigits },
+            { phone: `+91${cleanDigits}` },
+            { phone: `+91 ${cleanDigits}` },
+          ],
+        },
+      });
+    } else {
+      user = await prisma.user.findFirst({
+        where: {
+          OR: [
+            { email: rawInput.toLowerCase() },
+            { phone: rawInput },
+          ],
+        },
+      });
+    }
+
+    if (!user) {
+      return res.status(404).json({
+        error: 'UserNotFound',
+        message: 'No registered account found with that email address or mobile number.',
+      });
+    }
+
+    // Generate random 6-digit numeric OTP (100000 - 999999)
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    passwordResetStore.set(user.email.toLowerCase(), {
+      userId: user.id,
+      email: user.email.toLowerCase(),
+      name: user.name,
+      otp,
+      expiresAt,
+      verified: false,
+      attempts: 0,
+    });
+
+    // Send reset OTP email via Brevo REST API
+    try {
+      await sendOtpEmail({
+        toEmail: user.email,
+        toName: user.name,
+        otp,
+        subject: 'Your Aspectt Password Reset Code',
+        title: 'Reset Your Password',
+      });
+    } catch (brevoErr) {
+      console.error('Brevo API reset password send failure:', brevoErr);
+      return res.status(500).json({
+        error: 'EmailDeliveryFailed',
+        message: `Failed to deliver reset code: ${brevoErr.message}`,
+      });
+    }
+
+    // Mask email for user privacy display (e.g. al***@aspectt.com)
+    const [localPart, domain] = user.email.split('@');
+    const maskedLocal = localPart.length > 2
+      ? `${localPart.substring(0, 2)}***`
+      : `${localPart.substring(0, 1)}***`;
+    const maskedEmail = `${maskedLocal}@${domain}`;
+
+    return res.json({
+      success: true,
+      message: `A 6-digit verification code has been sent to your registered email (${maskedEmail}).`,
+      email: user.email.toLowerCase(),
+      maskedEmail,
+      expiresIn: '10 minutes',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ==============================================================================
+// 3c. Forgot Password - Step 2: POST /api/auth/verify-reset-otp
+// Validates the 6-digit reset OTP and issues a temporary signed reset token
+// ==============================================================================
+router.post('/verify-reset-otp', async (req, res, next) => {
+  try {
+    const { email, otp } = req.body || {};
+    if (!email || !otp) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Email and 6-digit verification code are required.',
+      });
+    }
+
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanOtp = String(otp).trim();
+
+    const record = passwordResetStore.get(cleanEmail);
+    if (!record) {
+      return res.status(400).json({
+        error: 'InvalidOtp',
+        message: 'No active password reset request found for this email. Please request a new code.',
+      });
+    }
+
+    if (new Date() > new Date(record.expiresAt)) {
+      passwordResetStore.delete(cleanEmail);
+      return res.status(400).json({
+        error: 'ExpiredOtp',
+        message: 'The reset verification code has expired. Please request a new code.',
+      });
+    }
+
+    record.attempts = (record.attempts || 0) + 1;
+    if (record.attempts > 5) {
+      passwordResetStore.delete(cleanEmail);
+      return res.status(400).json({
+        error: 'TooManyAttempts',
+        message: 'Too many incorrect attempts. Please request a new code.',
+      });
+    }
+
+    if (record.otp !== cleanOtp) {
+      return res.status(400).json({
+        error: 'InvalidOtp',
+        message: 'Invalid 6-digit verification code. Please check and try again.',
+      });
+    }
+
+    // Generate a temporary 15-minute reset token signed with JWT
+    const resetToken = jwt.sign(
+      { userId: record.userId, email: record.email, purpose: 'password_reset' },
+      JWT_SECRET,
+      { expiresIn: '15m' }
+    );
+
+    record.verified = true;
+    record.resetToken = resetToken;
+
+    return res.json({
+      success: true,
+      message: 'Verification code confirmed. You can now set your new password.',
+      resetToken,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ==============================================================================
+// 3d. Forgot Password - Step 3: POST /api/auth/reset-password
+// Verifies reset token, validates strong password, updates bcrypt hash in database
+// ==============================================================================
+router.post('/reset-password', async (req, res, next) => {
+  try {
+    const { resetToken, newPassword, email, otp } = req.body || {};
+
+    if (!newPassword || typeof newPassword !== 'string') {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'New password is required.',
+      });
+    }
+
+    // Strong password validation: at least 6 chars, uppercase, lowercase, number, symbol
+    const hasMinLength = newPassword.length >= 6;
+    const hasUpper = /[A-Z]/.test(newPassword);
+    const hasLower = /[a-z]/.test(newPassword);
+    const hasNumber = /[0-9]/.test(newPassword);
+    const hasSymbol = /[^A-Za-z0-9]/.test(newPassword);
+
+    if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Password must be at least 6 characters and include an uppercase letter, a lowercase letter, a number, and a symbol.',
+      });
+    }
+
+    let userId = null;
+    let targetEmail = null;
+
+    if (resetToken) {
+      try {
+        const payload = jwt.verify(resetToken, JWT_SECRET);
+        if (payload.purpose !== 'password_reset') {
+          return res.status(400).json({
+            error: 'InvalidToken',
+            message: 'Invalid password reset token.',
+          });
+        }
+        userId = payload.userId;
+        targetEmail = payload.email;
+      } catch (tokenErr) {
+        return res.status(400).json({
+          error: 'ExpiredOrInvalidToken',
+          message: 'Password reset session has expired or is invalid. Please request a new code.',
+        });
+      }
+    } else if (email && otp) {
+      // Fallback verification using email + otp
+      const cleanEmail = String(email).trim().toLowerCase();
+      const record = passwordResetStore.get(cleanEmail);
+      if (!record || record.otp !== String(otp).trim() || new Date() > new Date(record.expiresAt)) {
+        return res.status(400).json({
+          error: 'InvalidOtp',
+          message: 'Invalid or expired verification code.',
+        });
+      }
+      userId = record.userId;
+      targetEmail = cleanEmail;
+    } else {
+      return res.status(400).json({
+        error: 'ValidationError',
+        message: 'Reset authorization token is missing.',
+      });
+    }
+
+    // Hash the new password with bcrypt
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    // Update the user record in database
+    await prisma.user.update({
+      where: { id: userId },
+      data: { passwordHash },
+    });
+
+    // Invalidate the reset token & clean up passwordResetStore
+    if (targetEmail) {
+      passwordResetStore.delete(targetEmail.toLowerCase());
+    }
+
+    return res.json({
+      success: true,
+      message: 'Your password has been reset successfully. Please sign in with your new password.',
     });
   } catch (error) {
     next(error);

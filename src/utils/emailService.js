@@ -95,7 +95,7 @@ export function hasValidOtp(email) {
 /**
  * Generates dark-mode cinema branded HTML template for Aspectt OTP emails
  */
-export function generateOtpHtml({ userName, otp }) {
+export function generateOtpHtml({ userName, otp, title = 'Verify Your Account' }) {
   const safeName = userName ? String(userName).replace(/[&<>"']/g, '') : 'Cinephile';
 
   return `<!DOCTYPE html>
@@ -122,7 +122,7 @@ export function generateOtpHtml({ userName, otp }) {
           <tr>
             <td style="padding: 36px 32px 28px; text-align: center;">
               <h1 style="font-size: 20px; font-weight: 700; color: #FFFFFF; margin: 0 0 12px;">
-                Verify Your Account
+                ${title}
               </h1>
               <p style="font-size: 14px; color: #B8BCC4; line-height: 1.6; margin: 0 0 28px;">
                 Hello <strong style="color: #FFFFFF;">${safeName}</strong>,<br>
@@ -175,7 +175,7 @@ export function generateOtpHtml({ userName, otp }) {
  * @param {string} params.otp - 6-digit numeric OTP string
  * @returns {Promise<{ success: boolean, messageId?: string, simulated?: boolean }>}
  */
-export async function sendOtpEmail({ toEmail, toName, otp }) {
+export async function sendOtpEmail({ toEmail, toName, otp, subject, title }) {
   if (!toEmail || typeof toEmail !== 'string' || !toEmail.trim()) {
     throw new Error('Recipient email is required to send verification OTP.');
   }
@@ -193,6 +193,7 @@ export async function sendOtpEmail({ toEmail, toName, otp }) {
   const htmlContent = generateOtpHtml({
     userName: cleanName,
     otp: cleanOtp,
+    title: title || 'Verify Your Account',
   });
 
   // Simulated fallback in development if Brevo API key is not yet set
@@ -218,7 +219,7 @@ export async function sendOtpEmail({ toEmail, toName, otp }) {
         name: cleanName,
       },
     ],
-    subject: 'Your Aspectt Verification Code (OTP)',
+    subject: subject || 'Your Aspectt Verification Code (OTP)',
     htmlContent,
   };
 
