@@ -56,28 +56,76 @@ const formatUserSafe = (user) => ({
         });
       }
 
-      if (!password || typeof password !== 'string' || password.length < 6) {
-        return res.status(400).json({
-          error: 'ValidationError',
-          message: 'Password must be at least 6 characters long.',
-        });
-      }
-
       const cleanEmail = email.trim().toLowerCase();
       const cleanName = name.trim();
       const cleanPhone = phone && typeof phone === 'string' ? phone.trim() : null;
+      const cleanPhoneDigits = cleanPhone ? cleanPhone.replace(/\D/g, '') : null;
 
-        // 1. Check if email is already registered in permanent User table
-        const existingUser = await prisma.user.findUnique({
-          where: { email: cleanEmail },
+      // Validate mobile number format if provided
+      if (cleanPhone && cleanPhoneDigits.length !== 10) {
+        return res.status(400).json({
+          error: 'ValidationError',
+          message: 'Please enter a valid 10-digit mobile number.',
+        });
+      }
+
+      // Strong password validation: at least 6 chars, uppercase, lowercase, number, symbol
+      if (!password || typeof password !== 'string') {
+        return res.status(400).json({
+          error: 'ValidationError',
+          message: 'Password is required.',
+        });
+      }
+
+      const hasMinLength = password.length >= 6;
+      const hasUpper = /[A-Z]/.test(password);
+      const hasLower = /[a-z]/.test(password);
+      const hasNumber = /[0-9]/.test(password);
+      const hasSymbol = /[^A-Za-z0-9]/.test(password);
+
+      if (!hasMinLength || !hasUpper || !hasLower || !hasNumber || !hasSymbol) {
+        return res.status(400).json({
+          error: 'ValidationError',
+          message: 'Password must be at least 6 characters and include an uppercase letter, a lowercase letter, a number, and a symbol.',
+        });
+      }
+
+      // 1. Check if email is already registered in permanent User table
+      const existingUser = await prisma.user.findUnique({
+        where: { email: cleanEmail },
+      });
+
+      if (existingUser) {
+        return res.status(400).json({
+          error: 'EmailAlreadyRegistered',
+          message: 'An account with this email address already exists. Please sign in instead.',
+        });
+      }
+
+      // 2. Check if mobile number is already registered in permanent User table
+      if (cleanPhone) {
+        const existingPhoneUser = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { phone: cleanPhone },
+              ...(cleanPhoneDigits
+                ? [
+                    { phone: cleanPhoneDigits },
+                    { phone: `+91${cleanPhoneDigits}` },
+                    { phone: `+91 ${cleanPhoneDigits}` },
+                  ]
+                : []),
+            ],
+          },
         });
 
-        if(existingUser) {
+        if (existingPhoneUser) {
           return res.status(400).json({
-            error: 'EmailAlreadyRegistered',
-            message: 'An account with this email address already exists. Please sign in instead.',
+            error: 'PhoneAlreadyRegistered',
+            message: 'An account with this mobile number already exists. Please sign in instead.',
           });
         }
+      }
 
     // 2. Hash password for pending storage
     const passwordHash = await bcrypt.hash(password, 10);
@@ -213,7 +261,7 @@ router.post('/verify-otp', async (req, res, next) => {
         });
       }
 
-      // 4. Ensure user does not already exist
+      // 4. Ensure email and mobile number do not already exist
       const existing = await prisma.user.findUnique({
         where: { email: cleanEmail },
       });
@@ -222,6 +270,30 @@ router.post('/verify-otp', async (req, res, next) => {
           error: 'EmailAlreadyRegistered',
           message: 'An account with this email address already exists. Please sign in instead.',
         });
+      }
+
+      if (pending.phone) {
+        const cleanPendingDigits = String(pending.phone).replace(/\D/g, '');
+        const existingPhone = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { phone: pending.phone },
+              ...(cleanPendingDigits
+                ? [
+                    { phone: cleanPendingDigits },
+                    { phone: `+91${cleanPendingDigits}` },
+                    { phone: `+91 ${cleanPendingDigits}` },
+                  ]
+                : []),
+            ],
+          },
+        });
+        if (existingPhone) {
+          return res.status(400).json({
+            error: 'PhoneAlreadyRegistered',
+            message: 'An account with this mobile number already exists. Please sign in instead.',
+          });
+        }
       }
 
       // 5. Create permanent record in User table
