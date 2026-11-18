@@ -415,41 +415,56 @@ const movies = [
 const behindTheLensClips = [
   {
     title: 'Submarine Acoustics & 16mm Rigs',
-    filmmakerName: 'Elena Vance',
+    personName: 'Elena Vance',
+    role: 'Cinematographer',
+    details: 'Exploring ultra-low-light exposure under Arctic fjords using custom waterproof housings on vintage Arriflex 16mm cameras.',
     cameraNote: 'Shot on 16mm • Bergen Fjord • Arriflex 416 with vintage Zeiss Super Speeds',
     duration: '3m 42s',
     thumbnailUrl:
       'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1280&h=720&q=80',
     clipUrl:
       'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    videoUrl:
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
   },
   {
     title: 'Monsoon Radio & Neon Night Tests',
-    filmmakerName: 'Aarav Kapoor',
+    personName: 'Aarav Kapoor',
+    role: 'Filmmaker',
+    details: 'Live audio recording and high-speed photography capturing heavy rain and natural street light.',
     cameraNote: 'Shot on 16mm • Mumbai • Custom sealed weather housing & sodium flare filtration',
     duration: '4m 12s',
     thumbnailUrl:
       'https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1280&h=720&q=80',
     clipUrl:
       'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    videoUrl:
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
   },
   {
     title: 'Typhoon Night Anamorphic Diptych',
-    filmmakerName: 'Kenji Sato',
+    personName: 'Kenji Sato',
+    role: 'Filmmaker',
+    details: 'Test reels capturing torrential Kyoto rain under vintage anamorphic glass with only natural storefront neon illumination.',
     cameraNote: 'Cooke Anamorphic /i • Gion Backstreets, Kyoto • Ambient rain sound capture',
     duration: '2m 58s',
     thumbnailUrl:
       'https://images.unsplash.com/photo-1493976040374-85c8e12f0c0e?auto=format&fit=crop&w=1280&h=720&q=80',
     clipUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
+    videoUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
   },
   {
     title: 'Analog Darkroom Silver Exposures',
-    filmmakerName: 'Claire Fontaine',
+    personName: 'Claire Fontaine',
+    role: 'Production Design',
+    details: 'Hand-processing photochemical stock on silver gelatin emulsion for archival textures.',
     cameraNote: 'Hand-Cranked 35mm • Kreuzberg, Berlin • Silver gelatin print development',
     duration: '3m 20s',
     thumbnailUrl:
       'https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1280&h=720&q=80',
     clipUrl:
+      'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
+    videoUrl:
       'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
   },
 ];
@@ -548,7 +563,7 @@ async function main() {
         where: { id: existing.id },
         data: clip,
       });
-      console.log(`   ✔ [${existing.id}] Updated clip: "${clip.title}" by ${clip.filmmakerName}`);
+      console.log(`   ✔ [${existing.id}] Updated clip: "${clip.title}" by ${clip.personName}`);
     } else {
       const created = await prisma.behindTheLens.create({
         data: {
@@ -556,7 +571,7 @@ async function main() {
           ...clip,
         },
       });
-      console.log(`   ✔ [${created.id}] Created clip: "${clip.title}" by ${clip.filmmakerName}`);
+      console.log(`   ✔ [${created.id}] Created clip: "${clip.title}" by ${clip.personName}`);
     }
   }
   console.log('');

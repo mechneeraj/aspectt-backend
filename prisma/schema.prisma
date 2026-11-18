@@ -83,19 +83,18 @@ model Watchlist {
 // 4. Behind The Lens Model
 // ------------------------------------------------------------------------------
 model BehindTheLens {
-  id            String   @id
-  personName    String?
-  role          String   @default("Filmmaker")
-  title         String?
-  details       String?  @db.Text
-  filmography   String?  @db.Text
-  videoUrl      String?
-  thumbnailUrl  String?
-  duration      String?  @default("3m 00s")
-  filmmakerName String?
-  cameraNote    String?  @db.Text
-  clipUrl       String?
-  createdAt     DateTime @default(now())
+  id           String   @id
+  personName   String?
+  role         String   @default("Filmmaker")
+  title        String?
+  details      String?  @db.Text
+  filmography  String?  @db.Text
+  videoUrl     String?
+  thumbnailUrl String?
+  duration     String?  @default("3m 00s")
+  cameraNote   String?  @db.Text
+  clipUrl      String?
+  createdAt    DateTime @default(now())
 
   @@map("behind_the_lens")
 }

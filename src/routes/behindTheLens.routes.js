@@ -6,11 +6,11 @@ const router = Router();
 
 /**
  * Normalizes BehindTheLens database records for consistent API output
- * with full backward-compatibility for legacy fields.
+ * using personName and role as the single source of truth.
  */
 export const normalizeClipRecord = (clip) => {
   if (!clip) return null;
-  const person = clip.personName || clip.filmmakerName || 'Artist';
+  const person = clip.personName || 'Artist';
   const role = clip.role || 'Filmmaker';
   const video = clip.videoUrl || clip.clipUrl || '';
   const details = clip.details || clip.cameraNote || '';
@@ -29,8 +29,8 @@ export const normalizeClipRecord = (clip) => {
     thumbnailUrl: thumb,
     duration: clip.duration || '3m 00s',
     createdAt: clip.createdAt,
-    // Backward compatibility aliases
-    filmmakerName: person,
+    // Backward compatibility aliases for UI components expecting these fields
+    director: person,
     cameraNote: details,
     clipUrl: video,
     image: thumb,
@@ -133,7 +133,6 @@ router.post('/', async (req, res, next) => {
         thumbnailUrl: trimmedThumb,
         duration: duration ? duration.trim() : '3m 00s',
         // Legacy fallback sync
-        filmmakerName: trimmedPerson,
         cameraNote: trimmedDetails || '',
         clipUrl: trimmedVideo,
       },
@@ -171,7 +170,6 @@ router.put('/:id', async (req, res, next) => {
     const updateData = {};
     if (personName !== undefined) {
       updateData.personName = personName ? personName.trim() : existing.personName;
-      updateData.filmmakerName = updateData.personName;
     }
     if (role !== undefined) {
       updateData.role = role && role.trim() ? role.trim() : 'Filmmaker';
